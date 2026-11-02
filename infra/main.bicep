@@ -12,10 +12,13 @@ param prefix string = 'taskflow'
 param location string = resourceGroup().location
 
 @description('AKS node VM size.')
-param aksNodeVmSize string = 'Standard_D2s_v5'
+param aksNodeVmSize string = 'Standard_D2as_v5'
 
 @minValue(1)
 param aksNodeCount int = 2
+
+@description('Region for PostgreSQL (can differ from AKS when a SKU is restricted in one region).')
+param postgresLocation string = location
 
 param postgresAdminUser string = 'taskflowadmin'
 
@@ -28,7 +31,7 @@ param postgresDatabaseName string = 'taskflow'
 var suffix = uniqueString(resourceGroup().id)
 var acrName = toLower('${prefix}acr${suffix}')
 var aksName = '${prefix}-aks'
-var pgName = '${prefix}-pg-${suffix}'
+var pgName = '${prefix}-pg-${uniqueString(resourceGroup().id, postgresLocation)}'
 
 resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: '${prefix}-logs'
@@ -102,7 +105,7 @@ resource aksAcrPull 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 
 resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: pgName
-  location: location
+  location: postgresLocation
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'

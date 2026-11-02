@@ -6,15 +6,15 @@
 #
 # It will:
 #   1. create the resource group and deploy infra/main.bicep (ACR, AKS, PostgreSQL)
-#   2. create an Entra ID app with a federated credential for GitHub Actions (OIDC, no stored secrets)
+#   2. create a managed identity with federated credentials for GitHub Actions (OIDC, no stored secrets)
 #   3. grant that identity access to the resource group and ACR
 #   4. store the IDs, names and DB connection string as GitHub secrets/variables
 set -euo pipefail
 
 REPO="${1:?usage: bootstrap.sh <owner/repo> [resource-group] [location]}"
 RG="${2:-rg-taskflow}"
-LOCATION="${3:-southeastasia}"
-APP_NAME="gh-${REPO//\//-}-deploy"
+LOCATION="${3:-southeastasia}"   # resource group metadata only; see main.bicepparam for resource regions
+ID_NAME="taskflow-github-deploy"
 
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 TENANT_ID=$(az account show --query tenantId -o tsv)
@@ -38,22 +38,18 @@ PG_HOST=$(jq -r .postgresHost.value <<<"$OUT")
 PG_DB=$(jq -r .postgresDatabase.value <<<"$OUT")
 PG_USER=taskflowadmin
 
-echo "==> Entra ID app for GitHub OIDC: $APP_NAME"
-APP_ID=$(az ad app list --display-name "$APP_NAME" --query "[0].appId" -o tsv)
-if [[ -z "$APP_ID" ]]; then
-  APP_ID=$(az ad app create --display-name "$APP_NAME" --query appId -o tsv)
-fi
-az ad sp show --id "$APP_ID" -o none 2>/dev/null || az ad sp create --id "$APP_ID" -o none
-SP_OBJECT_ID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
+echo "==> Managed identity for GitHub OIDC: $ID_NAME"
+# A user-assigned managed identity needs only Azure RBAC rights on the resource group,
+# not Entra ID app-registration rights (often blocked for guest or restricted users).
+az identity create -g "$RG" -n "$ID_NAME" -o none
+CLIENT_ID=$(az identity show -g "$RG" -n "$ID_NAME" --query clientId -o tsv)
+PRINCIPAL_ID=$(az identity show -g "$RG" -n "$ID_NAME" --query principalId -o tsv)
 
 add_fic() {  # name subject
-  if ! az ad app federated-credential list --id "$APP_ID" --query "[?name=='$1']" -o tsv | grep -q .; then
-    az ad app federated-credential create --id "$APP_ID" --parameters "{
-      \"name\": \"$1\",
-      \"issuer\": \"https://token.actions.githubusercontent.com\",
-      \"subject\": \"$2\",
-      \"audiences\": [\"api://AzureADTokenExchange\"]
-    }" -o none
+  if ! az identity federated-credential show -g "$RG" --identity-name "$ID_NAME" -n "$1" -o none 2>/dev/null; then
+    az identity federated-credential create -g "$RG" --identity-name "$ID_NAME" -n "$1" \
+      --issuer "https://token.actions.githubusercontent.com" \
+      --subject "$2" --audiences "api://AzureADTokenExchange" -o none
   fi
 }
 add_fic "main-branch" "repo:${REPO}:ref:refs/heads/main"
@@ -62,14 +58,14 @@ add_fic "production-env" "repo:${REPO}:environment:production"
 echo "==> Role assignments"
 RG_ID=$(az group show -n "$RG" --query id -o tsv)
 ACR_ID=$(az acr show -n "$ACR_NAME" --query id -o tsv)
-az role assignment create --assignee-object-id "$SP_OBJECT_ID" --assignee-principal-type ServicePrincipal \
+az role assignment create --assignee-object-id "$PRINCIPAL_ID" --assignee-principal-type ServicePrincipal \
   --role Contributor --scope "$RG_ID" -o none 2>/dev/null || true
-az role assignment create --assignee-object-id "$SP_OBJECT_ID" --assignee-principal-type ServicePrincipal \
+az role assignment create --assignee-object-id "$PRINCIPAL_ID" --assignee-principal-type ServicePrincipal \
   --role AcrPush --scope "$ACR_ID" -o none 2>/dev/null || true
 
 echo "==> GitHub secrets and variables on $REPO"
 gh api -X PUT "repos/${REPO}/environments/production" --silent
-gh secret set AZURE_CLIENT_ID       -R "$REPO" -b "$APP_ID"
+gh secret set AZURE_CLIENT_ID       -R "$REPO" -b "$CLIENT_ID"
 gh secret set AZURE_TENANT_ID       -R "$REPO" -b "$TENANT_ID"
 gh secret set AZURE_SUBSCRIPTION_ID -R "$REPO" -b "$SUBSCRIPTION_ID"
 gh secret set DB_CONNECTION_STRING  -R "$REPO" \

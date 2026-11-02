@@ -133,6 +133,13 @@ gh repo create <your-user>/docker-and-kubernetes-app --private --source . --push
 
 ### 2. Provision Azure and wire up GitHub (one time)
 
+> New subscriptions: register the resource providers first (once):
+> `for p in Microsoft.ContainerService Microsoft.ContainerRegistry Microsoft.DBforPostgreSQL Microsoft.OperationalInsights Microsoft.OperationsManagement Microsoft.Insights; do az provider register -n $p --wait; done`
+>
+> Regions: some subscriptions can't create standard VM or PostgreSQL sizes in every region.
+> `infra/main.bicepparam` sets AKS to Central India and PostgreSQL to Southeast Asia; change
+> `location` / `postgresLocation` / `aksNodeVmSize` there if your subscription allows others.
+
 In **Azure Cloud Shell (bash)**, WSL or Git Bash, signed in with `az login` and `gh auth login`:
 
 ```bash
@@ -140,7 +147,8 @@ In **Azure Cloud Shell (bash)**, WSL or Git Bash, signed in with `az login` and 
 ```
 
 This deploys `infra/main.bicep` (ACR, AKS with the app routing add-on, PostgreSQL Flexible Server,
-Log Analytics) and creates an Entra ID app that trusts GitHub through **OIDC federated credentials**.
+Log Analytics) and creates a **user-assigned managed identity** that trusts GitHub through
+**OIDC federated credentials** (it needs only Azure RBAC rights, not Entra ID app-registration rights).
 No Azure passwords are stored in GitHub. It then sets:
 
 | Kind     | Name                                                                 |
@@ -184,7 +192,7 @@ flowchart LR
 
 ## Cost and production notes
 
-- The defaults (2 × `Standard_D2s_v5` nodes, Burstable B1ms PostgreSQL, Basic ACR) cost roughly
+- The defaults (2 × `Standard_D2as_v5` nodes, Burstable B1ms PostgreSQL, Basic ACR) cost roughly
   what a small dev environment does. Stop the cluster when idle: `az aks stop -g rg-taskflow -n taskflow-aks`.
   Delete everything with `az group delete -n rg-taskflow`.
 - For production, consider: PostgreSQL private networking (VNet integration) instead of the
