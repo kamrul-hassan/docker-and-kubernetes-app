@@ -54,6 +54,12 @@ add_fic() {  # name subject
 }
 add_fic "main-branch" "repo:${REPO}:ref:refs/heads/main"
 add_fic "production-env" "repo:${REPO}:environment:production"
+# Newer GitHub repos send ID-based subjects (repo:owner@<ownerId>/name@<repoId>:...); register those too.
+OWNER_ID=$(gh api "repos/${REPO}" --jq .owner.id)
+REPO_ID=$(gh api "repos/${REPO}" --jq .id)
+ID_SUBJECT="repo:${REPO%%/*}@${OWNER_ID}/${REPO##*/}@${REPO_ID}"
+add_fic "main-branch-ids" "${ID_SUBJECT}:ref:refs/heads/main"
+add_fic "production-env-ids" "${ID_SUBJECT}:environment:production"
 
 echo "==> Role assignments"
 RG_ID=$(az group show -n "$RG" --query id -o tsv)
