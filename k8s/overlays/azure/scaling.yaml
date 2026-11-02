@@ -1,0 +1,41 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: taskflow-api
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: taskflow-api }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: taskflow-web
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: taskflow-web }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 70 } }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: taskflow-api
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: taskflow-api }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: taskflow-web
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: taskflow-web }

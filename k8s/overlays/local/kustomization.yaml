@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: taskflow
+resources:
+  - namespace.yaml
+  - ../../base
+  - postgres.yaml
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Local-only credentials. Never reuse these anywhere real.
+secretGenerator:
+  - name: postgres
+    literals:
+      - POSTGRES_DB=taskflow
+      - POSTGRES_USER=taskflow
+      - POSTGRES_PASSWORD=taskflow
+  - name: taskflow-db
+    literals:
+      - connection-string=Host=postgres;Port=5432;Database=taskflow;Username=taskflow;Password=taskflow
+
+# Images built locally with:  docker build -t taskflow-api:local backend
+images:
+  - name: taskflow-api
+    newTag: local
+  - name: taskflow-web
+    newTag: local

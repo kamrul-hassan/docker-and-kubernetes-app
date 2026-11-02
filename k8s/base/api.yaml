@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskflow-api
+  labels: { app: taskflow-api }
+spec:
+  selector:
+    matchLabels: { app: taskflow-api }
+  template:
+    metadata:
+      labels: { app: taskflow-api }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654          # $APP_UID in the .NET images
+        seccompProfile: { type: RuntimeDefault }
+      # Apply EF Core migrations before the API container starts.
+      initContainers:
+        - name: migrate
+          image: taskflow-api
+          command: ["dotnet", "TaskFlow.Api.dll", "--migrate-only"]
+          env:
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef: { name: taskflow-db, key: connection-string }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+      containers:
+        - name: api
+          image: taskflow-api
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef: { name: taskflow-db, key: connection-string }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskflow-api
+  labels: { app: taskflow-api }
+spec:
+  selector: { app: taskflow-api }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

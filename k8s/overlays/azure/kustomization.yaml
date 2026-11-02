@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: taskflow
+resources:
+  - namespace.yaml
+  - ../../base
+  - scaling.yaml   # HPAs (2-5 replicas) + PodDisruptionBudgets
+
+# The `taskflow-db` secret is created by the CD pipeline from a GitHub secret,
+# so no credentials live in this repo.
+
+patches:
+  # AKS application routing add-on (managed NGINX)
+  - target: { kind: Ingress, name: taskflow }
+    patch: |-
+      - op: replace
+        path: /spec/ingressClassName
+        value: webapprouting.kubernetes.azure.com
+
+# The CD pipeline overwrites these with `kustomize edit set image`.
+images:
+  - name: taskflow-api
+    newName: REPLACE_ME.azurecr.io/taskflow-api
+    newTag: latest
+  - name: taskflow-web
+    newName: REPLACE_ME.azurecr.io/taskflow-web
+    newTag: latest

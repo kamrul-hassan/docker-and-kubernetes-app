@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskflow-web
+  labels: { app: taskflow-web }
+spec:
+  selector:
+    matchLabels: { app: taskflow-web }
+  template:
+    metadata:
+      labels: { app: taskflow-web }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: web
+          image: taskflow-web
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            # The Next.js server calls the API over cluster DNS; the API is not exposed publicly.
+            - name: API_URL
+              value: http://taskflow-api:8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 100m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskflow-web
+  labels: { app: taskflow-web }
+spec:
+  selector: { app: taskflow-web }
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

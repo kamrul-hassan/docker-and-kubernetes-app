@@ -1,0 +1,12 @@
+@host = http://localhost:5080
+
+GET {{host}}/api/tasks
+
+###
+POST {{host}}/api/tasks
+Content-Type: application/json
+
+{ "title": "Write the first feature" }
+
+###
+GET {{host}}/health/ready
