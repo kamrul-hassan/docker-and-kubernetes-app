@@ -19,8 +19,8 @@ export default async function Home() {
   return (
     <main>
       <header>
-        <h1>TaskFlow</h1>
-        <p className="muted">Next.js · ASP.NET Core 10 · PostgreSQL</p>
+        <h1>Welcome to TaskFlow!</h1>
+        <p className="muted">Next.js · ASP.NET Core 10 · PostgreSQL</p>         
       </header>
 
       <form action={createTask} className="new-task">
